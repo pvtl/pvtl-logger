@@ -17,9 +17,9 @@ define( 'WDM_URL_TO_MONITOR', get_option('siteurl') );
 define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . 'logs/downtime-log.txt' );
 define( 'WDM_EMAIL', 'erin.w@pivotalagency.com.au' );
 define( 'WDM_NOTIFICATION_INTERVAL', 900 ); // 15 minutes in seconds
-define( 'WDM_CPU_THRESHOLD', 80 ); // CPU usage threshold in percentage
-define( 'WDM_MEMORY_THRESHOLD', 80 ); // Memory usage threshold in percentage
-define( 'WDM_IO_THRESHOLD', 80 ); // Disk I/O threshold in percentage
+define( 'WDM_CPU_THRESHOLD', 99 ); // CPU usage threshold in percentage
+define( 'WDM_MEMORY_THRESHOLD', 99 ); // Memory usage threshold in percentage
+define( 'WDM_IO_THRESHOLD', 99 ); // Disk I/O threshold in percentage
 
 // Option name for storing last notification time
 define( 'WDM_LAST_NOTIFICATION_OPTION', 'wdm_last_notification_time' );
