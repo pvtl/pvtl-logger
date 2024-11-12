@@ -3,7 +3,7 @@
 Plugin Name: PVTL Server Logger
 Plugin URI: https://pivotalagency.com.au
 Description: Monitors website uptime and sends email notifications for downtime.
-Version: 1.4
+Version: 1.5
 Author: Pivotal Agency Pty Ltd
 Author URI: https://pivotalagency.com.au
 License: GPLv2 or later
@@ -173,126 +173,127 @@ function wdm_display_log_viewer_page() {
         mkdir($import_dir, 0755, true); // Create the directory if it doesn't exist
     }
 
-    // Check if a file has been uploaded
+    // Check if a file has been uploaded or selected from the previous uploads
+    $target_file = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['logfile'])) {
         $uploaded_file = $_FILES['logfile'];
         $target_file = $import_dir . basename($uploaded_file['name']);
+        if (!move_uploaded_file($uploaded_file['tmp_name'], $target_file)) {
+            echo '<p>Error uploading file. Please try again.</p>';
+        }
+    } elseif (isset($_GET['file'])) {
+        $target_file = $import_dir . basename($_GET['file']);
+    }
 
-        // Move the uploaded file to the imports directory
-        if (move_uploaded_file($uploaded_file['tmp_name'], $target_file)) {
-            // Read the file for parsing
-            $data = file($target_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    // Check if bots are selected for blocking
+    if (isset($_POST['block_bots']) && !empty($_POST['bots_to_block'])) {
+        $bots_to_block = $_POST['bots_to_block'];
+        $result = add_bot_blocking_rules($bots_to_block);
+        echo "<p>$result</p>";
+    }
 
-            // Initialize counters for HTTP status groups and errors
-            $errorCounts = [
-                '3XX' => 0,
-                '4XX' => 0,
-                '5XX' => 0,
-            ];
-            $detailedErrors = [
-                '3XX' => [],
-                '4XX' => [],
-                '5XX' => [],
-            ];
-            $errorCauses = [
-                '301' => 'Moved Permanently: The resource has been moved to a new URL.',
-                '302' => 'Found: Temporary redirection to a different URL.',
-                '404' => 'Not Found: The requested resource does not exist on the server.',
-                '403' => 'Forbidden: Access to the requested resource is denied.',
-                '500' => 'Internal Server Error: Generic server error, often from misconfigurations.',
-                '502' => 'Bad Gateway: Server received an invalid response from an inbound server.',
-                '503' => 'Service Unavailable: Server is currently unavailable (overloaded or down).',
-                '504' => 'Gateway Timeout: Server didn’t receive a timely response from an upstream server.',
-            ];
-            
-            $userAgentPatterns = [
-                'bot' => 'Bot: Common bot, potentially causing high traffic or errors',
-                'crawl' => 'Crawler: May overload server resources if too frequent',
-                'spider' => 'Spider: Typically search engines',
-            ];
+    // If there’s a valid target file, analyze it
+    if ($target_file && file_exists($target_file)) {
+        // Read the file for parsing
+        $data = file($target_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
-            $ipHits = [];
-            $userAgentsDetected = [
-                'bot' => [],
-                'crawl' => [],
-                'spider' => [],
-            ];
+        // Initialize counters for HTTP status groups and errors
+        $errorCounts = ['3XX' => 0, '4XX' => 0, '5XX' => 0];
+        $detailedErrors = ['3XX' => [], '4XX' => [], '5XX' => []];
+        $errorCauses = [
+            '301' => 'Moved Permanently: The resource has been moved to a new URL.',
+            '302' => 'Found: Temporary redirection to a different URL.',
+            '404' => 'Not Found: The requested resource does not exist on the server.',
+            '403' => 'Forbidden: Access to the requested resource is denied.',
+            '500' => 'Internal Server Error: Generic server error, often from misconfigurations.',
+            '502' => 'Bad Gateway: Server received an invalid response from an inbound server.',
+            '503' => 'Service Unavailable: Server is currently unavailable (overloaded or down).',
+            '504' => 'Gateway Timeout: Server didn’t receive a timely response from an upstream server.',
+        ];
 
-            // Loop through each line in the log file
-            foreach ($data as $line) {
-                $parts = explode(" ", $line);
-                $statusCode = isset($parts[8]) ? $parts[8] : null;
-                $ipAddress = isset($parts[0]) ? $parts[0] : null;
-                $userAgent = isset($parts[11]) ? implode(" ", array_slice($parts, 11)) : '';
+        $userAgentPatterns = [
+            'bot' => 'Bot: Common bot, potentially causing high traffic or errors',
+            'crawl' => 'Crawler: May overload server resources if too frequent',
+            'spider' => 'Spider: Typically search engines',
+        ];
 
-                if ($statusCode) {
-                    $statusGroup = substr($statusCode, 0, 1) . 'XX';
+        $ipHits = [];
+        $userAgentsDetected = ['bot' => [], 'crawl' => [], 'spider' => []];
 
-                    if (in_array($statusGroup, ['3XX', '4XX', '5XX'])) {
-                        $errorCounts[$statusGroup]++;
-                        if (!isset($detailedErrors[$statusGroup][$statusCode])) {
-                            $detailedErrors[$statusGroup][$statusCode] = ['count' => 0, 'cause' => $errorCauses[$statusCode] ?? 'Unknown reason'];
-                        }
-                        $detailedErrors[$statusGroup][$statusCode]['count']++;
+        // Loop through each line in the log file
+        foreach ($data as $line) {
+            $parts = explode(" ", $line);
+            $statusCode = isset($parts[8]) ? $parts[8] : null;
+            $ipAddress = isset($parts[0]) ? $parts[0] : null;
+            $userAgent = isset($parts[11]) ? implode(" ", array_slice($parts, 11)) : '';
+
+            if ($statusCode) {
+                $statusGroup = substr($statusCode, 0, 1) . 'XX';
+                if (in_array($statusGroup, ['3XX', '4XX', '5XX'])) {
+                    $errorCounts[$statusGroup]++;
+                    if (!isset($detailedErrors[$statusGroup][$statusCode])) {
+                        $detailedErrors[$statusGroup][$statusCode] = ['count' => 0, 'cause' => $errorCauses[$statusCode] ?? 'Unknown reason'];
                     }
-                }
-
-                if ($ipAddress) {
-                    $ipHits[$ipAddress] = ($ipHits[$ipAddress] ?? 0) + 1;
-                }
-
-                // Detect and categorize user agents
-                foreach ($userAgentPatterns as $pattern => $description) {
-                    if (stripos($userAgent, $pattern) !== false) {
-                        $userAgentsDetected[$pattern][] = $userAgent;
-                        break;
-                    }
+                    $detailedErrors[$statusGroup][$statusCode]['count']++;
                 }
             }
 
-            // Display HTTP error summary including 3XX, 4XX, and 5XX
-            echo "<h2>HTTP Error Summary</h2>";
-            foreach ($errorCounts as $group => $count) {
-                echo "<h3>$group Errors: $count</h3>";
-                echo "<ul>";
-                foreach ($detailedErrors[$group] as $code => $details) {
-                    echo "<li>$code: {$details['count']} occurrences - Cause: {$details['cause']}</li>";
+            if ($ipAddress) {
+                $ipHits[$ipAddress] = ($ipHits[$ipAddress] ?? 0) + 1;
+            }
+
+            // Detect and categorize user agents
+            foreach ($userAgentPatterns as $pattern => $description) {
+                if (stripos($userAgent, $pattern) !== false) {
+                    $userAgentsDetected[$pattern][] = $userAgent;
+                    break;
+                }
+            }
+        }
+
+        // Display HTTP error summary including 3XX, 4XX, and 5XX
+        echo "<h2>HTTP Error Summary</h2>";
+        foreach ($errorCounts as $group => $count) {
+            echo "<h3>$group Errors: $count</h3>";
+            echo "<ul>";
+            foreach ($detailedErrors[$group] as $code => $details) {
+                echo "<li>$code: {$details['count']} occurrences - Cause: {$details['cause']}</li>";
+            }
+            echo "</ul>";
+        }
+
+        // Display IP address analysis, limited to the top 25 IPs
+        echo "<h2>IP Address Analysis (Top 25)</h2>";
+        arsort($ipHits); // Sort IPs by hit count, descending
+        $topIpHits = array_slice($ipHits, 0, 25, true);
+        echo "<ul>";
+        foreach ($topIpHits as $ip => $hitCount) {
+            echo "<li>$ip: $hitCount requests</li>";
+        }
+        echo "</ul>";
+
+        // Display detected bots, crawlers, and spiders with checkboxes to block them
+        echo "<h3>Detected Bots, Crawlers, and Spiders</h3>";
+        echo '<form method="post">';
+        foreach ($userAgentsDetected as $type => $agents) {
+            if (!empty($agents)) {
+                echo "<h4>" . ucfirst($type) . "s</h4><ul>";
+                foreach (array_unique($agents) as $agent) {
+                    echo "<li><label><input type='checkbox' name='bots_to_block[]' value='" . esc_attr($agent) . "'> " . esc_html($agent) . "</label></li>";
                 }
                 echo "</ul>";
             }
-
-            // Display IP address analysis, limited to the top 25 IPs
-            echo "<h2>IP Address Analysis (Top 25)</h2>";
-            arsort($ipHits); // Sort IPs by hit count, descending
-            $topIpHits = array_slice($ipHits, 0, 25, true);
-            echo "<ul>";
-            foreach ($topIpHits as $ip => $hitCount) {
-                echo "<li>$ip: $hitCount requests</li>";
-            }
-            echo "</ul>";
-
-            // Display detected bots, crawlers, and spiders
-            echo "<h2>Detected Bots, Crawlers, and Spiders</h2>";
-            foreach ($userAgentsDetected as $type => $agents) {
-                if (!empty($agents)) {
-                    echo "<h3>" . ucfirst($type) . "s</h3><ul>";
-                    foreach (array_unique($agents) as $agent) {
-                        echo "<li>{$agent}</li>";
-                    }
-                    echo "</ul>";
-                }
-            }
-        } else {
-            echo '<p>Error uploading file. Please try again.</p>';
         }
-    } else {
-        // Form for uploading the log file
-        echo '<h1>Upload Log File</h1>';
-        echo '<form action="" method="post" enctype="multipart/form-data">';
-        echo '<input type="file" name="logfile" accept=".log">';
-        echo '<button type="submit">Upload and Analyze</button>';
+        echo '<button type="submit" name="block_bots">Block Selected Bots</button>';
         echo '</form>';
     }
+
+    // Display the upload form
+    echo '<h1>Upload Log File</h1>';
+    echo '<form action="" method="post" enctype="multipart/form-data">';
+    echo '<input type="file" name="logfile" accept=".log">';
+    echo '<button type="submit">Upload and Analyze</button>';
+    echo '</form>';
 
     // Additional stats section for I/O, Memory, and CPU usage
     echo '<h2>Resource Usage Stats</h2>';
@@ -346,8 +347,62 @@ function wdm_display_log_viewer_page() {
 
     echo '</tbody></table>';
 
+    // List previously uploaded files in the 'imports' directory
+    echo '<h2>Previously Uploaded Files</h2>';
+    $uploaded_files = scandir($import_dir);
+    if ($uploaded_files) {
+        echo '<ul>';
+        foreach ($uploaded_files as $file) {
+            if ($file !== '.' && $file !== '..') {
+                $file_url = add_query_arg('file', urlencode($file), menu_page_url('wdm-log-viewer', false));
+                echo "<li><a href='{$file_url}'>{$file}</a></li>";
+            }
+        }
+        echo '</ul>';
+    } else {
+        echo '<p>No previously uploaded files.</p>';
+    }
+
     echo '</div>';
 }
+
+// Function to add bot-blocking rules to the public_html .htaccess file in the specified format
+function add_bot_blocking_rules($bots_to_block = []) {
+    // Path to the .htaccess file in public_html
+    $htaccess_path = $_SERVER['DOCUMENT_ROOT'] . '/.htaccess';
+    
+    // Check to ensure we're adding a non-empty array of bots
+    if (empty($bots_to_block) || !is_array($bots_to_block)) {
+        return "No bots specified for blocking.";
+    }
+
+    // Clean up bot names for use in the RewriteCond line
+    $bots_pattern = implode('|', array_map('preg_quote', $bots_to_block));
+
+    // Prepare the bot-blocking rule
+    $bot_block_rule = "\n# BEGIN Bot Blocking\n";
+    $bot_block_rule .= "RewriteCond %{HTTP_USER_AGENT} ($bots_pattern) [NC]\n";
+    $bot_block_rule .= "RewriteRule .* - [F,L]\n";
+    $bot_block_rule .= "# END Bot Blocking\n";
+
+    // Read the existing .htaccess content
+    $htaccess_content = file_exists($htaccess_path) ? file_get_contents($htaccess_path) : '';
+
+    // Remove any existing bot-blocking section to avoid duplicates
+    $htaccess_content = preg_replace('/# BEGIN Bot Blocking.*# END Bot Blocking\n?/s', '', $htaccess_content);
+
+    // Append the new bot-blocking rules to the .htaccess content
+    $htaccess_content .= $bot_block_rule;
+
+    // Write the updated content back to the .htaccess file
+    if (file_put_contents($htaccess_path, $htaccess_content)) {
+        return "Bot blocking rules successfully added to .htaccess.";
+    } else {
+        return "Failed to write to .htaccess. Please check file permissions.";
+    }
+}
+
+
 
 ?>
 
