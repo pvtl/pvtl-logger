@@ -1,10 +1,10 @@
 <?php
 /*
-Plugin Name: PVTL Downtime Monitor
+Plugin Name: PVTL Server Logger
 Plugin URI: https://pivotalagency.com.au
 Description: Monitors website uptime and sends email notifications for downtime.
 Version: 1.0
-Author: Erin Welch
+Author: Pivotal Agency Pty Ltd
 Author URI: https://pivotalagency.com.au
 License: GPLv2 or later
 */
