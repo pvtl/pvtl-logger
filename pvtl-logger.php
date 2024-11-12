@@ -276,6 +276,61 @@ function wdm_display_log_viewer_page() {
     }
 
     echo '</div>';
+
+
+// Additional stats section for I/O, Memory, and CPU usage
+        echo '<h2>Resource Usage Stats</h2>';
+        echo '<table class="widefat fixed" cellspacing="0">';
+        echo '<thead><tr><th>Timestamp</th><th>Status</th><th>Details</th><th>HTTP Error Code</th><th>CPU Usage (%)</th><th>Memory Usage (MB)</th><th>I/O Usage (%)</th></tr></thead>';
+        echo '<tbody>';
+    
+        // Fetch log entries for CPU, Memory, and I/O stats
+        $log_file_path = WDM_LOG_FILE;
+        $log_entries = [];
+    
+        if (file_exists($log_file_path)) {
+            $file_content = file_get_contents($log_file_path);
+            $lines = explode("\n", $file_content);
+    
+            foreach ($lines as $line) {
+                if (strpos($line, '3XX') !== false || strpos($line, '4XX') !== false || strpos($line, '5XX') !== false || strpos($line, 'RESOURCE SPIKE') !== false || strpos($line, 'DOWN') !== false) {
+                    $log_entries[] = $line;
+                }
+            }
+        }
+    
+        foreach ($log_entries as $entry) {
+            preg_match('/\[(.*?)\] (.*?)\n/', $entry, $matches);
+            $timestamp = $matches[1] ?? 'Unknown';
+            $status = $matches[2] ?? 'Unknown';
+    
+            // Extract specific stats if they are available in the log entry
+            preg_match('/Status Code: (\d{3})/', $entry, $http_code_match);
+            $http_code = $http_code_match[1] ?? 'N/A';
+    
+            preg_match('/CPU Load: ([\d\.]+)%/', $entry, $cpu_match);
+            $cpu_usage = $cpu_match[1] ?? 'N/A';
+    
+            preg_match('/Memory Usage: ([\d\.]+) MB/', $entry, $memory_match);
+            $memory_usage = $memory_match[1] ?? 'N/A';
+    
+            preg_match('/Disk I/O: ([\d\.]+)%/', $entry, $io_match);
+            $io_usage = $io_match[1] ?? 'N/A';
+    
+            echo '<tr>';
+            echo "<td>{$timestamp}</td>";
+            echo "<td>{$status}</td>";
+            echo "<td>" . substr($entry, strpos($entry, ']') + 2) . "</td>";
+            echo "<td>{$http_code}</td>";
+            echo "<td>{$cpu_usage}</td>";
+            echo "<td>{$memory_usage}</td>";
+            echo "<td>{$io_usage}</td>";
+            echo '</tr>';
+        }
+    
+        echo '</tbody></table>';
+    
+        echo '</div>';
 }
 
 // Function to add bot-blocking rules to the public_html .htaccess file in the specified format
@@ -302,3 +357,5 @@ function add_bot_blocking_rules($bots_to_block = []) {
         return "Failed to write to .htaccess. Please check file permissions.";
     }
 }
+
+
