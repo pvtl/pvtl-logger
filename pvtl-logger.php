@@ -3,7 +3,7 @@
 Plugin Name: PVTL Server Logger
 Plugin URI: https://pivotalagency.com.au
 Description: Monitors website uptime and sends email notifications for downtime.
-Version: 1.0
+Version: 1.1
 Author: Pivotal Agency Pty Ltd
 Author URI: https://pivotalagency.com.au
 License: GPLv2 or later
@@ -110,11 +110,10 @@ register_deactivation_hook( __FILE__, 'wdm_clear_schedule' );
 
 
 
-// Existing code above this point...
-
 // Function to create an admin menu page for the log viewer
 function wdm_add_log_viewer_page() {
-    add_menu_page(
+    add_submenu_page(
+        'tools.php',                   // Parent slug (Tools menu)
         'Downtime Log Viewer',         // Page title
         'Downtime Logs',               // Menu title
         'manage_options',              // Capability
