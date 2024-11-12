@@ -14,7 +14,7 @@ if ( !defined( 'ABSPATH' ) ) exit;
 
 // Dynamic site URL retrieval
 define( 'WDM_URL_TO_MONITOR', get_option('siteurl') );
-define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . 'logs/downtime-log.txt' );
+define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . '/downtime-log.txt' );
 define( 'WDM_EMAIL', 'erin.w@pivotalagency.com.au' );
 define( 'WDM_NOTIFICATION_INTERVAL', 900 ); // 15 minutes in seconds
 define( 'WDM_CPU_THRESHOLD', 99 ); // CPU usage threshold in percentage
@@ -304,20 +304,3 @@ function add_bot_blocking_rules($bots_to_block = []) {
 
 
 ?>
-
-        <style type="text/css">
-            table {
-                border-collapse: collapse;
-            }
-
-            td, th {
-                border: 1px solid #eee;
-                margin: 0;
-                padding: 5px;
-            }
-
-            th {
-                text-align: left;
-                background-color: #FC0;
-            }
-        </style>
