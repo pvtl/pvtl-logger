@@ -61,102 +61,6 @@ function wdm_check_website_and_server_status() {
     }
 }
 
-// Function to monitor I/O usage as a rate in MB/s, using cumulative disk operations from getrusage()
-function wdm_get_io_usage() {
-    // Define path to store previous I/O data
-    $io_data_file = plugin_dir_path( __FILE__ ) . 'logs/previous_io_data.txt';
-    
-    // Get current I/O data using getrusage()
-    $current_usage = getrusage();
-    $current_io_reads = $current_usage['ru_inblock'];
-    $current_io_writes = $current_usage['ru_oublock'];
-    $current_time = time();
-    
-    // Retrieve previous I/O data if it exists
-    if (file_exists($io_data_file)) {
-        $previous_data = json_decode(file_get_contents($io_data_file), true);
-        $previous_io_reads = $previous_data['io_reads'];
-        $previous_io_writes = $previous_data['io_writes'];
-        $previous_time = $previous_data['time'];
-    } else {
-        // If no previous data, initialize values and return 0% I/O usage
-        $previous_io_reads = $current_io_reads;
-        $previous_io_writes = $current_io_writes;
-        $previous_time = $current_time;
-    }
-
-    // Calculate elapsed time in seconds since last check
-    $time_difference = max(1, $current_time - $previous_time);
-
-    // Calculate the change in I/O operations
-    $io_read_delta = max(0, $current_io_reads - $previous_io_reads);
-    $io_write_delta = max(0, $current_io_writes - $previous_io_writes);
-
-    // Estimate total I/O bytes based on block size (4 KB per block on most systems)
-    $total_io_kb = ($io_read_delta + $io_write_delta) * 4;
-    $io_mb_per_sec = ($total_io_kb / 1024) / $time_difference;
-
-    // Calculate I/O usage as a percentage of the 25 MB/s limit
-    $io_usage_percent = min(100, ($io_mb_per_sec / 25) * 100);
-
-    // Save current I/O data for the next calculation
-    $io_data = json_encode([
-        'io_reads' => $current_io_reads,
-        'io_writes' => $current_io_writes,
-        'time' => $current_time
-    ]);
-    file_put_contents($io_data_file, $io_data);
-
-    return round($io_usage_percent, 2); // Return I/O usage percentage
-}
-
-// Schedule the monitor to run every minute
-function wdm_schedule_monitor() {
-    if ( ! wp_next_scheduled( 'wdm_monitor_event' ) ) {
-        wp_schedule_event( time(), 'every_minute', 'wdm_monitor_event' );
-    }
-}
-add_action( 'wp', 'wdm_schedule_monitor' );
-
-// Hook the monitor function to the scheduled event
-add_action( 'wdm_monitor_event', 'wdm_check_website_and_server_status' );
-
-// Custom cron interval (every minute)
-function wdm_custom_cron_intervals( $schedules ) {
-    $schedules['every_minute'] = array(
-        'interval' => 60,
-        'display'  => __( 'Every Minute' )
-    );
-    return $schedules;
-}
-add_filter( 'cron_schedules', 'wdm_custom_cron_intervals' );
-
-// Clear scheduled events on plugin deactivation
-function wdm_clear_schedule() {
-    $timestamp = wp_next_scheduled( 'wdm_monitor_event' );
-    if ( $timestamp ) {
-        wp_unschedule_event( $timestamp, 'wdm_monitor_event' );
-    }
-    delete_option(WDM_LAST_NOTIFICATION_OPTION);
-}
-register_deactivation_hook( __FILE__, 'wdm_clear_schedule' );
-
-// Function to add a submenu page under Tools for the log viewer
-function wdm_add_log_viewer_page() {
-    add_submenu_page(
-        'tools.php',                   // Parent slug (Tools menu)
-        'Downtime Log Viewer',         // Page title
-        'Downtime Logs',               // Menu title
-        'manage_options',              // Capability
-        'wdm-log-viewer',              // Menu slug
-        'wdm_display_log_viewer_page'  // Function to display page content
-    );
-}
-add_action('admin_menu', 'wdm_add_log_viewer_page');
-
-
-
-
 // Function to display the log viewer page content with upload, parsing capabilities, resource usage stats, and bot detection
 function wdm_display_log_viewer_page() {
     if (!current_user_can('manage_options')) {
@@ -218,7 +122,7 @@ function wdm_display_log_viewer_page() {
         ];
 
         $ipHits = [];
-        $userAgentsDetected = ['bot' => [], 'crawl' => [], 'spider' => []];
+        $userAgentsDetected = [];
 
         // Loop through each line in the log file
         foreach ($data as $line) {
@@ -242,12 +146,10 @@ function wdm_display_log_viewer_page() {
                 $ipHits[$ipAddress] = ($ipHits[$ipAddress] ?? 0) + 1;
             }
 
-            // Detect and categorize user agents
-            foreach ($userAgentPatterns as $pattern => $description) {
-                if (stripos($userAgent, $pattern) !== false) {
-                    $userAgentsDetected[$pattern][] = $userAgent;
-                    break;
-                }
+            // Extract bot name from user agent string (after "compatible;" and before the first "/")
+            if (preg_match('/compatible;\s*([a-zA-Z0-9]+)(?:\/|;|\s)/i', $userAgent, $matches)) {
+                $botName = $matches[1];
+                $userAgentsDetected[] = $botName;
             }
         }
 
@@ -272,17 +174,15 @@ function wdm_display_log_viewer_page() {
         }
         echo "</ul>";
 
-        // Display detected bots, crawlers, and spiders with checkboxes to block them
-        echo "<h3>Detected Bots, Crawlers, and Spiders</h3>";
+        // Display detected bots with checkboxes to block them
+        echo "<h3>Detected Bots</h3>";
         echo '<form method="post">';
-        foreach ($userAgentsDetected as $type => $agents) {
-            if (!empty($agents)) {
-                echo "<h4>" . ucfirst($type) . "s</h4><ul>";
-                foreach (array_unique($agents) as $agent) {
-                    echo "<li><label><input type='checkbox' name='bots_to_block[]' value='" . esc_attr($agent) . "'> " . esc_html($agent) . "</label></li>";
-                }
-                echo "</ul>";
+        if (!empty($userAgentsDetected)) {
+            echo "<ul>";
+            foreach (array_unique($userAgentsDetected) as $bot) {
+                echo "<li><label><input type='checkbox' name='bots_to_block[]' value='" . esc_attr($bot) . "'> " . esc_html($bot) . "</label></li>";
             }
+            echo "</ul>";
         }
         echo '<button type="submit" name="block_bots">Block Selected Bots</button>';
         echo '</form>';
@@ -403,10 +303,9 @@ function add_bot_blocking_rules($bots_to_block = []) {
 }
 
 
-
 ?>
 
-        <style media="screen">
+        <style type="text/css">
             table {
                 border-collapse: collapse;
             }
