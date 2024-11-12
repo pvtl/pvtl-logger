@@ -1,0 +1,17 @@
+{
+    "name": "pvtl/pvtl-logger",
+    "description": "Monitors website uptime and sends email notifications for downtime.",
+    "homepage": "https://github.com/pvtl/pvtl-logger",
+    "license": "GPL3",
+    "authors": [
+      {
+        "name": "Erin Welch",
+        "email": "erin.w@pvtl.io",
+        "homepage": "https://www.pivotalagency.com.au/"
+      }
+    ],
+    "type": "wordpress-plugin",
+    "require": {
+      "php": ">=7.4"
+    }
+  }
