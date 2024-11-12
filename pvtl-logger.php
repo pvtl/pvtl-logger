@@ -14,7 +14,7 @@ if ( !defined( 'ABSPATH' ) ) exit;
 
 // Dynamic site URL retrieval
 define( 'WDM_URL_TO_MONITOR', get_option('siteurl') );
-define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . 'logs/downtime-log.txt' );
+define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . '/downtime-log.txt' );
 define( 'WDM_EMAIL', 'erin.w@pivotalagency.com.au' );
 define( 'WDM_NOTIFICATION_INTERVAL', 900 ); // 15 minutes in seconds
 
@@ -107,3 +107,73 @@ function wdm_clear_schedule() {
     delete_option(WDM_LAST_NOTIFICATION_OPTION);
 }
 register_deactivation_hook( __FILE__, 'wdm_clear_schedule' );
+
+
+
+// Existing code above this point...
+
+// Function to create an admin menu page for the log viewer
+function wdm_add_log_viewer_page() {
+    add_menu_page(
+        'Downtime Log Viewer',         // Page title
+        'Downtime Logs',               // Menu title
+        'manage_options',              // Capability
+        'wdm-log-viewer',              // Menu slug
+        'wdm_display_log_viewer_page', // Function to display page content
+        'dashicons-visibility',        // Icon
+        80                             // Position
+    );
+}
+add_action('admin_menu', 'wdm_add_log_viewer_page');
+
+// Function to display the log viewer page content
+function wdm_display_log_viewer_page() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    // Fetch log entries
+    $log_file_path = WDM_LOG_FILE;
+    $log_entries = [];
+
+    if (file_exists($log_file_path)) {
+        $file_content = file_get_contents($log_file_path);
+        $lines = explode("\n", $file_content);
+
+        foreach ($lines as $line) {
+            if (strpos($line, '5') === 1) { // Filters lines with 5XX status codes
+                $log_entries[] = $line;
+            }
+        }
+    }
+
+    // Display the logs
+    echo '<div class="wrap">';
+    echo '<h1>Downtime Log Viewer - 5XX Errors</h1>';
+    
+    if (empty($log_entries)) {
+        echo '<p>No 5XX error logs found.</p>';
+    } else {
+        echo '<table class="widefat fixed" cellspacing="0">';
+        echo '<thead><tr><th>Timestamp</th><th>Status</th><th>Details</th></tr></thead>';
+        echo '<tbody>';
+
+        foreach ($log_entries as $entry) {
+            // Parsing entry parts
+            preg_match('/\[(.*?)\] (.*?)\n/', $entry, $matches);
+            $timestamp = $matches[1] ?? 'Unknown';
+            $status = $matches[2] ?? 'Unknown';
+            $details = substr($entry, strpos($entry, ']') + 2) ?? 'Unknown';
+
+            echo '<tr>';
+            echo "<td>{$timestamp}</td>";
+            echo "<td>{$status}</td>";
+            echo "<td>{$details}</td>";
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+    }
+    
+    echo '</div>';
+}

@@ -1,6 +1,6 @@
 # PVTL Website Downtime Logger
 
-Monitors website uptime and sends email notifications for downtime.
+Monitors website uptime and sends email notifications for downtime. You can view the logs by going to the WP Admin > Settings
 
 ## Installation into a Bedrock site
 
