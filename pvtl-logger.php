@@ -17,9 +17,9 @@ define( 'WDM_URL_TO_MONITOR', get_option('siteurl') );
 define( 'WDM_LOG_FILE', plugin_dir_path( __FILE__ ) . '/downtime-log.txt' );
 define( 'WDM_EMAIL', 'erin.w@pivotalagency.com.au' );
 define( 'WDM_NOTIFICATION_INTERVAL', 900 ); // 15 minutes in seconds
-define( 'WDM_CPU_THRESHOLD', 80 ); // CPU usage threshold in percentage
-define( 'WDM_MEMORY_THRESHOLD', 80 ); // Memory usage threshold in percentage
-define( 'WDM_IO_THRESHOLD', 80 ); // Disk I/O threshold in percentage
+define( 'WDM_CPU_THRESHOLD', 100 ); // CPU usage threshold in percentage
+define( 'WDM_MEMORY_THRESHOLD', 100 ); // Memory usage threshold in percentage
+define( 'WDM_IO_THRESHOLD', 100 ); // Disk I/O threshold in percentage
 
 // Option name for storing last notification time
 define( 'WDM_LAST_NOTIFICATION_OPTION', 'wdm_last_notification_time' );
@@ -62,7 +62,7 @@ function wdm_check_website_and_server_status() {
 
 // Function to monitor I/O usage as a rate in MB/s
 function wdm_get_io_usage() {
-    $io_data_file = plugin_dir_path( __FILE__ ) . 'logs/previous_io_data.txt';
+    $io_data_file = plugin_dir_path( __FILE__ ) . '/previous-io-data.txt';
     
     $current_usage = getrusage();
     $current_io_reads = $current_usage['ru_inblock'];
@@ -278,60 +278,65 @@ function wdm_display_log_viewer_page() {
     echo '</div>';
 
 
-// Additional stats section for I/O, Memory, and CPU usage
-        echo '<h2>Resource Usage Stats</h2>';
-        echo '<table class="widefat fixed" cellspacing="0">';
-        echo '<thead><tr><th>Timestamp</th><th>Status</th><th>Details</th><th>HTTP Error Code</th><th>CPU Usage (%)</th><th>Memory Usage (MB)</th><th>I/O Usage (%)</th></tr></thead>';
-        echo '<tbody>';
-    
-        // Fetch log entries for CPU, Memory, and I/O stats
-        $log_file_path = WDM_LOG_FILE;
-        $log_entries = [];
-    
-        if (file_exists($log_file_path)) {
-            $file_content = file_get_contents($log_file_path);
-            $lines = explode("\n", $file_content);
-    
-            foreach ($lines as $line) {
-                if (strpos($line, '3XX') !== false || strpos($line, '4XX') !== false || strpos($line, '5XX') !== false || strpos($line, 'RESOURCE SPIKE') !== false || strpos($line, 'DOWN') !== false) {
-                    $log_entries[] = $line;
-                }
-            }
-        }
-    
-        foreach ($log_entries as $entry) {
-            preg_match('/\[(.*?)\] (.*?)\n/', $entry, $matches);
-            $timestamp = $matches[1] ?? 'Unknown';
-            $status = $matches[2] ?? 'Unknown';
-    
-            // Extract specific stats if they are available in the log entry
-            preg_match('/Status Code: (\d{3})/', $entry, $http_code_match);
-            $http_code = $http_code_match[1] ?? 'N/A';
-    
-            preg_match('/CPU Load: ([\d\.]+)%/', $entry, $cpu_match);
-            $cpu_usage = $cpu_match[1] ?? 'N/A';
-    
-            preg_match('/Memory Usage: ([\d\.]+) MB/', $entry, $memory_match);
-            $memory_usage = $memory_match[1] ?? 'N/A';
-    
-            preg_match('/Disk I/O: ([\d\.]+)%/', $entry, $io_match);
-            $io_usage = $io_match[1] ?? 'N/A';
-    
+// Display Resource Usage Stats table with data from the downtime-log.txt file
+echo '<h2>Resource Usage Stats</h2>';
+echo '<table class="widefat fixed" cellspacing="0">';
+echo '<thead><tr><th>Timestamp</th><th>Status</th><th>URL</th><th>HTTP Error Code</th><th>CPU Usage (%)</th><th>Memory Usage (MB)</th><th>Disk I/O Usage (%)</th></tr></thead>';
+echo '<tbody>';
+
+// Path to the log file
+$log_file_path = WDM_LOG_FILE;
+
+if (file_exists($log_file_path)) {
+    $log_entries = file($log_file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    foreach ($log_entries as $line) {
+        // Match log entry details using regular expressions
+        if (preg_match('/\[(.*?)\] (.*?)$/', $line, $matches)) {
+            $timestamp = $matches[1];
+            $status = $matches[2];
+
+            // Initialize other variables as empty, they will be filled as we match further lines
+            $url = $http_code = $cpu_usage = $memory_usage = $io_usage = '';
+
+        } elseif (strpos($line, 'URL:') !== false) {
+            $url = trim(str_replace('URL:', '', $line));
+
+        } elseif (strpos($line, 'Status Code:') !== false) {
+            $http_code = trim(str_replace('Status Code:', '', $line));
+
+        } elseif (strpos($line, 'CPU Load:') !== false) {
+            $cpu_usage = trim(str_replace('CPU Load:', '', $line));
+
+        } elseif (strpos($line, 'Memory Usage:') !== false) {
+            $memory_usage = trim(str_replace('Memory Usage:', '', $line));
+
+        } elseif (strpos($line, 'Disk I/O:') !== false) {
+            $io_usage = trim(str_replace('Disk I/O:', '', $line));
+
+            // After reading Disk I/O, we assume the entry is complete, so we print the row
             echo '<tr>';
-            echo "<td>{$timestamp}</td>";
-            echo "<td>{$status}</td>";
-            echo "<td>" . substr($entry, strpos($entry, ']') + 2) . "</td>";
-            echo "<td>{$http_code}</td>";
-            echo "<td>{$cpu_usage}</td>";
-            echo "<td>{$memory_usage}</td>";
-            echo "<td>{$io_usage}</td>";
+            echo "<td>" . esc_html($timestamp) . "</td>";
+            echo "<td>" . esc_html($status) . "</td>";
+            echo "<td>" . esc_html($url) . "</td>";
+            echo "<td>" . esc_html($http_code) . "</td>";
+            echo "<td>" . esc_html($cpu_usage) . "</td>";
+            echo "<td>" . esc_html($memory_usage) . "</td>";
+            echo "<td>" . esc_html($io_usage) . "</td>";
             echo '</tr>';
+
+            // Clear variables for the next entry
+            $timestamp = $status = $url = $http_code = $cpu_usage = $memory_usage = $io_usage = '';
         }
-    
-        echo '</tbody></table>';
-    
-        echo '</div>';
+    }
+} else {
+    echo '<tr><td colspan="7">No log data found.</td></tr>';
 }
+
+echo '</tbody></table>';
+echo '</div>';
+
+
 
 // Function to add bot-blocking rules to the public_html .htaccess file in the specified format
 function add_bot_blocking_rules($bots_to_block = []) {
@@ -357,5 +362,4 @@ function add_bot_blocking_rules($bots_to_block = []) {
         return "Failed to write to .htaccess. Please check file permissions.";
     }
 }
-
-
+}
