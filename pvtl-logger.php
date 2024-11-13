@@ -278,6 +278,59 @@ function wdm_display_log_viewer_page() {
     echo '</div>';
 
 
+    
+// Display a table of 5XX errors with URL, Date/Time, and User Agent (with 5-minute interval filter)
+echo '<h2>Detailed 5XX Error Log</h2>';
+echo '<div style="max-height: 600px; overflow-y: auto;">';
+echo '<table class="widefat fixed" cellspacing="0">';
+echo '<thead><tr><th>Timestamp</th><th>URL</th><th>HTTP Error Code</th><th>User Agent</th></tr></thead>';
+echo '<tbody>';
+
+if ($target_file && file_exists($target_file)) {
+    $data = file($target_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $lastErrorTimes = [];
+
+    foreach ($data as $line) {
+        // Extract parts of the log line
+        $parts = explode(" ", $line);
+        $statusCode = isset($parts[8]) ? $parts[8] : null;
+        $timestamp = isset($parts[3]) ? substr($parts[3], 1) : '';  // Timestamp without starting bracket
+        $url = isset($parts[6]) ? $parts[6] : '';
+        $userAgent = isset($parts[11]) ? implode(" ", array_slice($parts, 11)) : '';
+
+        // Only include 5XX errors
+        if ($statusCode && substr($statusCode, 0, 1) === '5') {
+            // Convert timestamp to a Unix timestamp for comparison
+            $time = strtotime($timestamp);
+
+            // Create a unique key for this error type and URL to track intervals
+            $errorKey = $statusCode . '|' . $url;
+
+            // Check if the error has occurred within the last 5 minutes
+            if (!isset($lastErrorTimes[$errorKey]) || ($time - $lastErrorTimes[$errorKey]) > 300) { // 300 seconds = 5 minutes
+                // Update the last occurrence time for this error key
+                $lastErrorTimes[$errorKey] = $time;
+
+                // Output the error row
+                echo '<tr>';
+                echo "<td>" . esc_html($timestamp) . "</td>";
+                echo "<td>" . esc_html($url) . "</td>";
+                echo "<td>" . esc_html($statusCode) . "</td>";
+                echo "<td>" . esc_html($userAgent) . "</td>";
+                echo '</tr>';
+            }
+        }
+    }
+} else {
+    echo '<tr><td colspan="4">No 5XX error log data found.</td></tr>';
+}
+
+echo '</tbody></table>';
+echo '</div>';
+
+
+
+
 // Display Resource Usage Stats table with data from the downtime-log.txt file
 echo '<h2>Resource Usage Stats (5XX Errors Only)</h2>';
 echo '<table class="widefat fixed" cellspacing="0">';
@@ -339,29 +392,39 @@ echo '</tbody></table>';
 echo '</div>';
 
 
-
-// Function to add bot-blocking rules to the public_html .htaccess file in the specified format
+// Function to add bot-blocking rules to the .htaccess file in the specified format
 function add_bot_blocking_rules($bots_to_block = []) {
     $htaccess_path = $_SERVER['DOCUMENT_ROOT'] . '/.htaccess';
-    
+
     if (empty($bots_to_block) || !is_array($bots_to_block)) {
         return "No bots specified for blocking.";
     }
 
+    // Prepare the pattern for blocking the specified bots
     $bots_pattern = implode('|', array_map('preg_quote', $bots_to_block));
     $bot_block_rule = "\n# BEGIN Bot Blocking\n";
     $bot_block_rule .= "RewriteCond %{HTTP_USER_AGENT} ($bots_pattern) [NC]\n";
     $bot_block_rule .= "RewriteRule .* - [F,L]\n";
     $bot_block_rule .= "# END Bot Blocking\n";
 
+    // Read existing .htaccess content
     $htaccess_content = file_exists($htaccess_path) ? file_get_contents($htaccess_path) : '';
+
+    // Remove existing bot blocking rules to avoid duplicates
     $htaccess_content = preg_replace('/# BEGIN Bot Blocking.*# END Bot Blocking\n?/s', '', $htaccess_content);
     $htaccess_content .= $bot_block_rule;
 
-    if (file_put_contents($htaccess_path, $htaccess_content)) {
-        return "Bot blocking rules successfully added to .htaccess.";
+    // Check if .htaccess is writable and update it
+    if (is_writable($htaccess_path) || (!file_exists($htaccess_path) && is_writable(dirname($htaccess_path)))) {
+        if (file_put_contents($htaccess_path, $htaccess_content) !== false) {
+            return "Bot blocking rules successfully added to .htaccess.";
+        } else {
+            return "Failed to write to .htaccess. Please check file permissions.";
+        }
     } else {
-        return "Failed to write to .htaccess. Please check file permissions.";
+        return ".htaccess file is not writable. Please adjust file permissions.";
     }
 }
+
+
 }
