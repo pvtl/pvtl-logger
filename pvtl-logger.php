@@ -279,7 +279,7 @@ function wdm_display_log_viewer_page() {
 
 
 // Display Resource Usage Stats table with data from the downtime-log.txt file
-echo '<h2>Resource Usage Stats</h2>';
+echo '<h2>Resource Usage Stats (5XX Errors Only)</h2>';
 echo '<table class="widefat fixed" cellspacing="0">';
 echo '<thead><tr><th>Timestamp</th><th>Status</th><th>URL</th><th>HTTP Error Code</th><th>CPU Usage (%)</th><th>Memory Usage (MB)</th><th>Disk I/O Usage (%)</th></tr></thead>';
 echo '<tbody>';
@@ -296,7 +296,7 @@ if (file_exists($log_file_path)) {
             $timestamp = $matches[1];
             $status = $matches[2];
 
-            // Initialize other variables as empty, they will be filled as we match further lines
+            // Initialize other variables as empty
             $url = $http_code = $cpu_usage = $memory_usage = $io_usage = '';
 
         } elseif (strpos($line, 'URL:') !== false) {
@@ -314,16 +314,18 @@ if (file_exists($log_file_path)) {
         } elseif (strpos($line, 'Disk I/O:') !== false) {
             $io_usage = trim(str_replace('Disk I/O:', '', $line));
 
-            // After reading Disk I/O, we assume the entry is complete, so we print the row
-            echo '<tr>';
-            echo "<td>" . esc_html($timestamp) . "</td>";
-            echo "<td>" . esc_html($status) . "</td>";
-            echo "<td>" . esc_html($url) . "</td>";
-            echo "<td>" . esc_html($http_code) . "</td>";
-            echo "<td>" . esc_html($cpu_usage) . "</td>";
-            echo "<td>" . esc_html($memory_usage) . "</td>";
-            echo "<td>" . esc_html($io_usage) . "</td>";
-            echo '</tr>';
+            // Only display the row if the status code is in the 5XX range
+            if (strpos($http_code, '5') === 0) {
+                echo '<tr>';
+                echo "<td>" . esc_html($timestamp) . "</td>";
+                echo "<td>" . esc_html($status) . "</td>";
+                echo "<td>" . esc_html($url) . "</td>";
+                echo "<td>" . esc_html($http_code) . "</td>";
+                echo "<td>" . esc_html($cpu_usage) . "</td>";
+                echo "<td>" . esc_html($memory_usage) . "</td>";
+                echo "<td>" . esc_html($io_usage) . "</td>";
+                echo '</tr>';
+            }
 
             // Clear variables for the next entry
             $timestamp = $status = $url = $http_code = $cpu_usage = $memory_usage = $io_usage = '';
